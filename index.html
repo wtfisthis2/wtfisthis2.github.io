@@ -1,1 +1,402 @@
-Hello world
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8" />
+	<title>Catmull-Rom Demo</title>
+	<script type="text/javascript">
+					
+		function CatRomA( segment ) {
+			this.segment = segment;
+		}
+		
+		CatRomA.prototype = {
+			eval: function( s ) {
+				var v1 = this.segment[0];
+				var v3 = this.segment[2];
+				var v2 = this.segment[1];
+				var v4 = this.segment[3];
+				
+				var s1 = s;
+				var s2 = Math.pow(s, 2);
+				var s3 = Math.pow(s, 3);
+				
+				var f1 = -s3 + 2 * s2 - s;
+				var f2 = 3 * s3 - 5 * s2 + 2;
+				var f3 = -3 * s3 + 4 * s2 + s;
+				var f4 = s3 - s2;
+				
+				return ( v1.mult(f1).add(v2.mult(f2)).add(v3.mult(f3)).add(v4.mult(f4)) ).div(2);
+			}
+		}
+		
+		function CatRomB( segment ) {
+			this.segment = segment;
+		}
+		
+		CatRomB.prototype = {
+			eval: function( s ) {
+				var v1 = this.segment[0];
+				var v2 = this.segment[1];
+				var v3 = this.segment[2];
+				var v4 = this.segment[3];				
+			
+				var alpha = 0.5;
+				var t0 = 0;
+				var t1 = t0 + Math.pow(v1.sub(v2).length(), alpha);
+				var t2 = t1 + Math.pow(v2.sub(v3).length(), alpha);
+				var t3 = t2 + Math.pow(v3.sub(v4).length(), alpha);
+				
+				var t = t1 + (t2 - t1) * s;
+				var A1 = v1.mult( ( t1 - t ) / ( t1 - t0 ) ).add( v2.mult( ( t - t0 ) / ( t1 - t0 ) ) );
+				var A2 = v2.mult( ( t2 - t ) / ( t2 - t1 ) ).add( v3.mult( ( t - t1 ) / ( t2 - t1 ) ) );
+				var A3 = v3.mult( ( t3 - t ) / ( t3 - t2 ) ).add( v4.mult( ( t - t2 ) / ( t3 - t2 ) ) );
+				var B1 = A1.mult( ( t2 - t ) / ( t2 - t0 ) ).add( A2.mult( ( t - t0 ) / ( t2 - t0 ) ) );
+				var B2 = A2.mult( ( t3 - t ) / ( t3 - t1 ) ).add( A3.mult( ( t - t1 ) / ( t3 - t1 ) ) );
+				var C1 = B1.mult( ( t2 - t ) / ( t2 - t1 ) ).add( B2.mult( ( t - t1 ) / ( t2 - t1 ) ) );
+				
+				return C1;
+			}
+		}
+		
+		
+		function Vec2(x, y) {
+			this.x = x || 0;
+			this.y = y || 0;
+		}
+		
+		Vec2.prototype = {
+			add: function(v) {
+				if ( v instanceof Vec2 ) return new Vec2(this.x + v.x, this.y + v.y);
+				else return new Vec2(this.x + v, this.y + v);
+			},
+			sub: function(v) {
+				if ( v instanceof Vec2 ) return new Vec2(this.x - v.x, this.y - v.y);
+				else return new Vec2(this.x - v, this.y - v);
+			},
+			mult: function(v) {
+				if ( v instanceof Vec2 ) return new Vector(this.x * v.x, this.y * v.y);
+				else return new Vec2(this.x * v, this.y * v);
+			},
+			div: function(v) {
+				if ( v instanceof Vec2 ) return new Vector( this.x / v.x, this.y / v.y );
+				else return new Vec2(this.x / v, this.y / v);
+			},
+			dot: function(v) {
+				return this.x * v.x + this.y * v.y;
+			},
+			length: function() {
+				return Math.sqrt(this.dot(this));
+			}
+		}
+		
+		var v1 = new Vec2(50, 100);
+		var v2 = new Vec2(100,100);
+		var v3 = new Vec2(150,400);
+		var v4 = new Vec2(200,400);
+		var v5 = new Vec2(250,200);
+		var v6 = new Vec2(300,200);
+		var v7 = new Vec2(350,300);
+		var v8 = new Vec2(400,300);
+		var v9 = new Vec2(450,200);
+		var v10 = new Vec2(500,200);
+		var v11 = new Vec2(550,300);
+		var v12 = new Vec2(600,300);
+		//var points = [ v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v11, v12 ];
+		var points = [ v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12];
+		var selected = [];
+		var touch_lookup = [];
+		
+		function select(selected_index, do_select)
+		{
+			if ( do_select == true ) {
+				var is_selected = false;
+				var pos = selected.indexOf(selected_index);
+				if ( pos == -1 ) {				
+					selected.push(selected_index);
+				}
+			} else {
+				var pos = selected.indexOf(selected_index);
+				if ( pos != -1 ) {
+					selected.splice( pos, 1);
+				}
+			}
+		}
+		
+		function getMousePos(canvas, e) {
+			var rect = canvas.getBoundingClientRect();
+			return new Vec2( e.pageX - rect.left, e.pageY - rect.top);
+		}
+		
+		function fillCircle(ctx, v, color, radius) {
+			ctx.save();
+			ctx.fillStyle = color;			
+			ctx.beginPath();
+			ctx.arc(v.x, v.y, radius || 8, 0, 6.28318531);
+			ctx.closePath();
+			ctx.fill();
+			ctx.restore();
+		}
+		
+		function selectionHitTest(p) {
+			var min_dist = 1e8;
+			var min_index = -1;
+			for(index = 0; index < points.length; ++index) {
+				var dist = p.sub(points[index]).length();
+				if ( dist < min_dist ) {
+					min_dist = dist;
+					min_index = index;
+				}
+			}
+			if ( min_dist < 24 ) {
+				return min_index;
+			}
+			return -1;
+		}
+		
+		function drawCross(ctx, p, style, lw, length)
+		{
+			var l = length || 4;
+			ctx.save();
+			ctx.lineStyle = style || 'black'; 
+			ctx.lineWidth = lw || 0.5;
+			ctx.beginPath();
+			ctx.moveTo( p.x - l, p.y - l );
+			ctx.lineTo( p.x + l, p.y + l );
+			ctx.moveTo( p.x - l, p.y + l );
+			ctx.lineTo( p.x + l, p.y - l );
+			ctx.stroke();
+			ctx.restore();
+		}
+		
+		function redrawCanvas() {
+			var c = document.getElementById("canvas");
+			var ctx = c.getContext("2d");
+			ctx.clearRect(0, 0, c.width, c.height);
+			
+			
+			ctx.save();
+			ctx.lineWidth = 0.5;
+			for(x = 0; x < c.width; x+= 50)
+			{
+				ctx.beginPath();
+				ctx.moveTo(x-.5, 0);
+				ctx.lineTo(x-.5, c.height);
+				ctx.stroke();
+			}
+			for(y = 0; y < c.height ; y+= 50)
+			{
+				ctx.beginPath();
+				ctx.moveTo(0, y - 0.5);
+				ctx.lineTo(c.width, y - 0.5);
+				ctx.stroke();
+			}
+	
+			ctx.lineWidth = 1.5;
+			var drawPoints = [];
+			var p0 = points[0];
+			var p1 = points[1];
+			var pn = points[points.length-1];
+			var pm = points[points.length-2];
+			var p_start = p0.add(p0.sub(p1)); points[0].add(points[0].sub(points[1]));
+			var p_end = pn.add(pn.sub(pm));
+			var n = points.length - 1;
+			var segment_startA = new CatRomA([p_start, points[0], points[1], points[2]]);
+			var segment_endA = new CatRomA([p_end, points[n], points[n-1], points[n-2]]);
+			ctx.save();				
+			
+			ctx.setLineDash([5]);
+			ctx.beginPath();
+			for ( i = 0; i <= 1; i = i + 0.01 ) {
+				var p = segment_startA.eval(i);
+				if ( i == 0 ) {
+					ctx.moveTo( p.x, p.y );
+				} else {
+					ctx.lineTo(p.x, p.y);
+				}
+			}
+			ctx.stroke();
+ 
+			ctx.beginPath();
+			for ( i = 0; i <= 1; i = i + 0.01 ) {
+				var p = segment_endA.eval(i);
+				if ( i == 0 ) {
+					ctx.moveTo( p.x, p.y );
+				} else {
+					ctx.lineTo(p.x, p.y);
+				}
+			}
+			ctx.stroke();
+ 
+			ctx.restore();
+			
+			ctx.save();
+			ctx.strokeStyle='red';
+			var midpointsA = [];
+			var midpointsB = [];
+			ctx.beginPath();
+			for ( s = 0; s < (points.length - 3); s = s + 1) {
+				var segmentPoints = points.slice(s, s + 4);
+				var segmentA = new CatRomA(segmentPoints);
+				var segmentB = new CatRomB(segmentPoints);
+				for ( i = 0; i <= 1; i = i + 0.01 )
+				{
+					var p = segmentA.eval(i);
+					if ( s == 0 && i == 0 ) {
+						ctx.moveTo( p.x, p.y );
+					} else {
+						ctx.lineTo(p.x, p.y);
+					}
+				}
+				midpointsA.push( segmentA.eval(0.5) );
+				midpointsB.push( segmentB.eval(0.5) );
+				
+			}
+			ctx.stroke();
+			ctx.restore();
+			
+		
+			for ( index = 0; index < midpointsA.length; ++index ) {
+				//fillCircle(ctx, midpointsA[index], 'rgba(32,32,32,0.25)', 2);
+		
+				var p = midpointsA[index];
+				drawCross(ctx, p, 'black', 0.75 );
+				//fillCircle(ctx, midpointsB[index], 'rgba(32,32,32,0.25)', 2);
+			}
+		
+			
+			ctx.save();
+			ctx.strokeStyle='green';
+			ctx.beginPath();
+			for ( s = 0; s < (points.length - 3); s = s + 1) {
+				var segmentPoints = points.slice(s, s + 4);
+				var segment = new CatRomB(segmentPoints);
+				for ( i = 0; i <= 1; i = i + 0.01 )
+				{
+					var p = segment.eval(i);
+					if ( s == 0 && i == 0 ) {
+						ctx.moveTo( p.x, p.y );
+					} else {
+						ctx.lineTo(p.x, p.y);
+					}
+				}
+			}
+			ctx.stroke();
+			ctx.restore();
+			for (index = 0; index < points.length; index = index + 1) {
+				var p = points[index];
+				
+				if ( selected.indexOf(index) != -1 ) {
+					fillCircle(ctx, p, 'rgba(255,0,0,0.5)');
+				} else {
+					if ( index == 0 || index == (points.length - 1) ) {
+						fillCircle(ctx, p, 'rgba(0,0,255,0.5)');
+					} else {
+						fillCircle(ctx, p, 'rgba(0,0,0,0.15)', 6);
+					}
+				}
+			}
+			
+		}
+		function init()
+		{
+			var c = document.getElementById("canvas");
+		
+			c.addEventListener('selectstart', function(e) {e.preventDefault(); return false;}, false);
+			c.addEventListener('touchstart', function(e) {
+				e.preventDefault();
+				e.stopPropagation();
+				for ( touch_index = 0; touch_index < e.touches.length; ++touch_index ) {
+					var touch = e.touches[touch_index];
+					var p = getMousePos(c, touch);
+					
+					var selected_index = selectionHitTest(p);
+					if ( selected_index != -1 ) {
+						select( selected_index, true );
+						touch_lookup[touch_index] = selected_index;
+					} else {
+						touch_lookup[touch_index]= -1;
+					}
+					redrawCanvas();
+				}
+				console.log(e.touches[0]);
+			});
+			c.addEventListener('touchmove', function(e) {
+				e.preventDefault();
+				e.stopPropagation();
+				for ( touch_index = 0; touch_index < e.touches.length; ++touch_index ) {					
+					var tl = touch_lookup[touch_index];
+					if ( tl != -1 ) {
+						var touch = e.touches[touch_index];
+						var p = getMousePos(c, touch);
+						var sp = points[tl];
+						sp.x = p.x;
+						sp.y = p.y;
+						redrawCanvas();
+					}
+				}
+			});
+			c.addEventListener('touchend', function(e) {
+				e.preventDefault();
+				e.stopPropagation();
+				for ( touch_index = 0; touch_index < e.touches.length; ++touch_index ) {					
+					var tl = touch_lookup[touch_index];
+					if ( tl != -1 ) {
+						select( tl, false);
+						touch_lookup[touch_index] = -1;
+						
+						redrawCanvas();
+					}
+				}
+			});
+			c.addEventListener('mousedown', function(e) {
+				if ( e.buttons == 1 ) {
+					var mp = getMousePos(c, e);
+					var selected = selectionHitTest(mp);
+					select(selected, true);
+					touch_lookup[0] = selected;
+					redrawCanvas();
+				}
+			}, true);
+			c.addEventListener('mousemove', function(e) {
+				e.preventDefault();
+				e.stopPropagation();
+				var mp = getMousePos(c, e);
+				if ( e.buttons == 1 && touch_lookup[0] != -1 ) {
+					var p = points[touch_lookup[0]];
+					p.x = Math.round(mp.x / 12.5) * 12.5;
+					p.y = Math.round(mp.y / 12.5) * 12.5;
+					redrawCanvas();		
+				}
+			}, true);
+			c.addEventListener('mouseup', function(e) {
+				e.preventDefault();
+				e.stopPropagation();
+				for ( index = 0; index < points.length; ++index ) {
+					select( index, false );
+				}
+				touch_lookup[0] = -1;
+				redrawCanvas();
+			});
+			redrawCanvas();
+		}
+		
+		function close_path() {
+			var n = points.length - 1;
+			points[1].x = points[n-1].x;
+			points[1].y = points[n-1].y;
+			points[0].x = points[n-2].x;
+			points[0].y = points[n-2].y;			
+			points[n].x = points[2].x;
+			points[n].y = points[2].y;
+			
+			redrawCanvas();
+		}
+	</script>
+</head>	
+<body onload="init()">
+<h1>Catmull-Rom Spline Demo</h1>
+<canvas id="canvas" width="720" height="480" style="border:1px solid #000000;">
+</canvas>
+<button style="vertical-align: top" onclick="close_path()">Close path</button>
+</body>
+</html>
